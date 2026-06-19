@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dual Lane Rivals</title>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="scoreboard" aria-label="Race status">
+        <div class="pilot pilot-one">
+          <span class="pilot__tag">P1</span>
+          <strong id="p1-speed">30</strong>
+          <span>km/h</span>
+          <small id="p1-boosts">BOOST 0</small>
+        </div>
+        <div class="lead">
+          <span id="leader">EVEN</span>
+          <strong id="lead-meters">0.0m</strong>
+        </div>
+        <div class="pilot pilot-two">
+          <span class="pilot__tag">P2</span>
+          <strong id="p2-speed">30</strong>
+          <span>km/h</span>
+          <small id="p2-boosts">BOOST 0</small>
+        </div>
+      </section>
+
+      <section class="cabinet">
+        <div class="screen-label screen-label--left">A/D MOVE · W BOOST</div>
+        <div id="game" aria-label="Dual screen racing game"></div>
+        <div class="screen-label screen-label--right">←/→ MOVE · ↑ BOOST</div>
+      </section>
+
+      <section id="result" class="result result--hidden" aria-live="polite">
+        <div class="result__panel">
+          <span id="result-kicker">RACE OVER</span>
+          <h1 id="result-title">P1 WINS</h1>
+          <p id="result-copy">领先 50 米。</p>
+          <button id="restart" type="button">重新开始</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
