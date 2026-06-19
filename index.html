@@ -3,33 +3,74 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dual Lane Rivals</title>
+    <title>CarGame Online</title>
   </head>
   <body>
     <main class="shell">
-      <section class="scoreboard" aria-label="Race status">
-        <div class="pilot pilot-one">
-          <span class="pilot__tag">P1</span>
-          <strong id="p1-speed">30</strong>
-          <span>km/h</span>
-          <small id="p1-boosts">BOOST 0</small>
-        </div>
+      <section id="scoreboard" class="scoreboard scoreboard--hidden" aria-label="Race status">
+        <div id="player-stats" class="player-stats"></div>
         <div class="lead">
           <span id="leader">EVEN</span>
           <strong id="lead-meters">0.0m</strong>
         </div>
-        <div class="pilot pilot-two">
-          <span class="pilot__tag">P2</span>
-          <strong id="p2-speed">30</strong>
-          <span>km/h</span>
-          <small id="p2-boosts">BOOST 0</small>
-        </div>
       </section>
 
       <section class="cabinet">
-        <div class="screen-label screen-label--left">A/D MOVE · W BOOST</div>
-        <div id="game" aria-label="Dual screen racing game"></div>
-        <div class="screen-label screen-label--right">←/→ MOVE · ↑ BOOST</div>
+        <div id="game" aria-label="Multiplayer racing game"></div>
+      </section>
+
+      <section id="lobby" class="menu" aria-label="Game lobby">
+        <div class="menu__panel">
+          <span class="eyebrow">CarGame</span>
+          <h1>三人房间制赛车</h1>
+          <label class="field">
+            <span>昵称</span>
+            <input id="nickname" maxlength="16" value="Player" autocomplete="nickname" />
+          </label>
+
+          <div id="mode-picker" class="mode-grid">
+            <button id="show-local" type="button">本地房间</button>
+            <button id="show-online" type="button">云端在线</button>
+          </div>
+
+          <div id="local-panel" class="panel-stack panel-stack--hidden">
+            <div class="choice-row">
+              <button id="start-local-2" type="button">创建 2 人本地房间</button>
+              <button id="start-local-3" type="button">创建 3 人本地房间</button>
+            </div>
+            <p>P1 A/D/W · P2 ←/→/↑ · P3 J/L/I</p>
+            <button class="ghost" data-back type="button">返回</button>
+          </div>
+
+          <div id="online-panel" class="panel-stack panel-stack--hidden">
+            <div id="online-status" class="status-line">未连接</div>
+            <div class="choice-row">
+              <button id="connect-online" type="button">连接大厅</button>
+              <button id="create-room" type="button" disabled>新建房间</button>
+            </div>
+            <div class="join-row">
+              <input id="room-code" maxlength="6" placeholder="房间码" />
+              <button id="join-room" type="button" disabled>加入</button>
+            </div>
+            <div class="room-list-head">
+              <span>已有房间</span>
+              <button id="refresh-rooms" type="button" disabled>刷新</button>
+            </div>
+            <div id="room-list" class="room-list"></div>
+            <button class="ghost" data-back type="button">返回</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="room-panel" class="room-panel room-panel--hidden" aria-live="polite">
+        <div>
+          <span id="room-mode">ONLINE</span>
+          <strong id="room-title">ROOM</strong>
+          <small id="room-copy">等待玩家加入</small>
+        </div>
+        <div id="room-players" class="room-players"></div>
+        <button id="start-room" type="button">开始比赛</button>
+        <button id="leave-room" class="ghost" type="button">回到大厅</button>
       </section>
 
       <section id="result" class="result result--hidden" aria-live="polite">
@@ -37,7 +78,7 @@
           <span id="result-kicker">RACE OVER</span>
           <h1 id="result-title">P1 WINS</h1>
           <p id="result-copy">领先 50 米。</p>
-          <button id="restart" type="button">重新开始</button>
+          <button id="restart" type="button">回到房间</button>
         </div>
       </section>
     </main>

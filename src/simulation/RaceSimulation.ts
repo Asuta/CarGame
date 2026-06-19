@@ -1,4 +1,4 @@
-import type { PlayerId, RaceAction, RaceState } from "./raceTypes";
+import type { EndReason, PlayerId, RaceAction, RaceState } from "./raceTypes";
 
 const LANE_COUNT = 5;
 const INITIAL_SPEED = 30;
@@ -9,12 +9,23 @@ const OBSTACLE_SPAWN_AHEAD_METERS = 230;
 const OBSTACLE_CLEANUP_BEHIND_METERS = 24;
 const FIRST_OBSTACLE_AT_METERS = 90;
 const OBSTACLE_BAND_STEP_METERS = 15;
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 3;
+const PLAYER_IDS: PlayerId[] = ["p1", "p2", "p3"];
+const INITIAL_LANES: Record<PlayerId, number> = {
+  p1: 1,
+  p2: 3,
+  p3: 2,
+};
 
 export const raceRules = {
   laneCount: LANE_COUNT,
   initialSpeed: INITIAL_SPEED,
   boostIncrement: BOOST_INCREMENT,
   leadTargetMeters: LEAD_TARGET_METERS,
+  minPlayers: MIN_PLAYERS,
+  maxPlayers: MAX_PLAYERS,
+  playerIds: PLAYER_IDS,
 };
 
 export class RaceSimulation {
@@ -22,8 +33,10 @@ export class RaceSimulation {
   private nextObstacleId = 1;
   private nextObstacleDistance = FIRST_OBSTACLE_AT_METERS;
   private randomSeed = 0x6d2b79f5;
+  private readonly playerCount: number;
 
-  constructor() {
+  constructor(playerCount = MIN_PLAYERS) {
+    this.playerCount = this.normalizePlayerCount(playerCount);
     this.state = this.createInitialState();
     this.seedInitialTraffic();
   }
@@ -45,7 +58,11 @@ export class RaceSimulation {
       return;
     }
 
-    const player = this.state.players[action.playerId];
+    const player = this.findPlayer(action.playerId);
+    if (!player || player.crashed) {
+      return;
+    }
+
     if (action.type === "move-left") {
       player.lane = Math.max(0, player.lane - 1);
       return;
@@ -60,14 +77,29 @@ export class RaceSimulation {
     player.boostCount += 1;
   }
 
+  eliminatePlayer(playerId: PlayerId, reason: EndReason) {
+    if (this.state.winner !== null || this.state.endReason !== null) {
+      return;
+    }
+
+    const player = this.findPlayer(playerId);
+    if (!player || player.crashed) {
+      return;
+    }
+
+    player.crashed = true;
+    this.resolveElimination(reason);
+  }
+
   update(deltaSeconds: number) {
     if (this.state.winner !== null || this.state.endReason !== null) {
       return;
     }
 
     this.state.elapsedSeconds += deltaSeconds;
-    this.state.players.p1.distanceMeters += this.speedToMetersPerSecond(this.state.players.p1.speed) * deltaSeconds;
-    this.state.players.p2.distanceMeters += this.speedToMetersPerSecond(this.state.players.p2.speed) * deltaSeconds;
+    for (const player of this.activePlayers()) {
+      player.distanceMeters += this.speedToMetersPerSecond(player.speed) * deltaSeconds;
+    }
 
     this.updateLead();
     this.ensureTrafficAhead();
@@ -79,26 +111,20 @@ export class RaceSimulation {
     this.checkLeadWin();
   }
 
+  private normalizePlayerCount(playerCount: number) {
+    return Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, Math.round(playerCount)));
+  }
+
   private createInitialState(): RaceState {
     return {
-      players: {
-        p1: {
-          id: "p1",
-          lane: 1,
-          distanceMeters: 0,
-          speed: INITIAL_SPEED,
-          crashed: false,
-          boostCount: 0,
-        },
-        p2: {
-          id: "p2",
-          lane: 3,
-          distanceMeters: 0,
-          speed: INITIAL_SPEED,
-          crashed: false,
-          boostCount: 0,
-        },
-      },
+      players: PLAYER_IDS.slice(0, this.playerCount).map((id) => ({
+        id,
+        lane: INITIAL_LANES[id],
+        distanceMeters: 0,
+        speed: INITIAL_SPEED,
+        crashed: false,
+        boostCount: 0,
+      })),
       obstacles: [],
       winner: null,
       endReason: null,
@@ -112,15 +138,28 @@ export class RaceSimulation {
     return speed / 3.6;
   }
 
+  private activePlayers() {
+    return this.state.players.filter((player) => !player.crashed);
+  }
+
+  private findPlayer(playerId: PlayerId) {
+    return this.state.players.find((player) => player.id === playerId);
+  }
+
   private updateLead() {
-    const diff = this.state.players.p1.distanceMeters - this.state.players.p2.distanceMeters;
-    this.state.leadMeters = Math.abs(diff);
-    if (Math.abs(diff) < 0.05) {
+    const active = this.activePlayers().sort((a, b) => b.distanceMeters - a.distanceMeters);
+    if (active.length === 0) {
       this.state.leader = null;
+      this.state.leadMeters = 0;
       return;
     }
 
-    this.state.leader = diff > 0 ? "p1" : "p2";
+    this.state.leader = active[0].id;
+    this.state.leadMeters = active.length > 1 ? active[0].distanceMeters - active[1].distanceMeters : 0;
+    if (this.state.leadMeters < 0.05) {
+      this.state.leader = null;
+      this.state.leadMeters = 0;
+    }
   }
 
   private seedInitialTraffic() {
@@ -128,10 +167,10 @@ export class RaceSimulation {
   }
 
   private ensureTrafficAhead() {
-    const furthestPlayerDistance = Math.max(
-      this.state.players.p1.distanceMeters,
-      this.state.players.p2.distanceMeters,
-    );
+    const active = this.activePlayers();
+    const furthestPlayerDistance = active.length > 0
+      ? Math.max(...active.map((player) => player.distanceMeters))
+      : 0;
 
     while (this.nextObstacleDistance < furthestPlayerDistance + OBSTACLE_SPAWN_AHEAD_METERS) {
       this.spawnObstacleBand(this.nextObstacleDistance);
@@ -167,17 +206,20 @@ export class RaceSimulation {
   }
 
   private cleanupTraffic() {
-    const closestPlayerDistance = Math.min(
-      this.state.players.p1.distanceMeters,
-      this.state.players.p2.distanceMeters,
-    );
+    const active = this.activePlayers();
+    if (active.length === 0) {
+      return;
+    }
+
+    const closestPlayerDistance = Math.min(...active.map((player) => player.distanceMeters));
     this.state.obstacles = this.state.obstacles.filter(
       (obstacle) => obstacle.distanceMeters > closestPlayerDistance - OBSTACLE_CLEANUP_BEHIND_METERS,
     );
   }
 
   private checkObstacleCollisions() {
-    for (const player of Object.values(this.state.players)) {
+    const hitPlayerIds = new Set<PlayerId>();
+    for (const player of this.activePlayers()) {
       const hit = this.state.obstacles.some(
         (obstacle) =>
           obstacle.lane === player.lane &&
@@ -185,12 +227,37 @@ export class RaceSimulation {
       );
 
       if (hit) {
-        player.crashed = true;
-        this.state.endReason = "obstacle";
-        this.state.winner = this.otherPlayer(player.id);
-        return;
+        hitPlayerIds.add(player.id);
       }
     }
+
+    for (const playerId of hitPlayerIds) {
+      const player = this.findPlayer(playerId);
+      if (player) {
+        player.crashed = true;
+      }
+    }
+
+    if (hitPlayerIds.size > 0) {
+      this.resolveElimination("obstacle");
+    }
+  }
+
+  private resolveElimination(reason: EndReason) {
+    const active = this.activePlayers();
+    if (active.length === 1) {
+      this.state.winner = active[0].id;
+      this.state.endReason = reason;
+      return;
+    }
+
+    if (active.length === 0) {
+      this.state.winner = null;
+      this.state.endReason = reason;
+      return;
+    }
+
+    this.updateLead();
   }
 
   private checkLeadWin() {
@@ -198,10 +265,6 @@ export class RaceSimulation {
       this.state.winner = this.state.leader;
       this.state.endReason = "lead";
     }
-  }
-
-  private otherPlayer(playerId: PlayerId): PlayerId {
-    return playerId === "p1" ? "p2" : "p1";
   }
 
   private nextRandom() {

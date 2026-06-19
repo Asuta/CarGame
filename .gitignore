@@ -1,4 +1,8 @@
 node_modules
+.pnpm-store
 dist
+server-dist
+server-start*.log
+__pycache__
 .DS_Store
 *.local

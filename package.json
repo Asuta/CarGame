@@ -5,14 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc && vite build",
+    "dev:server": "tsx server/index.ts",
+    "build": "tsc && vite build && tsc -p tsconfig.server.json",
     "preview": "vite preview --host 127.0.0.1",
+    "start": "tsx server/index.ts",
     "test": "vitest run"
   },
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@types/node": "^24.10.4",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.7",
     "vitest": "^4.0.16"

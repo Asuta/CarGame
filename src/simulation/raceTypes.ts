@@ -1,6 +1,6 @@
-export type PlayerId = "p1" | "p2";
+export type PlayerId = "p1" | "p2" | "p3";
 
-export type EndReason = "lead" | "obstacle";
+export type EndReason = "lead" | "obstacle" | "disconnect";
 
 export interface PlayerState {
   id: PlayerId;
@@ -19,7 +19,7 @@ export interface ObstacleState {
 }
 
 export interface RaceState {
-  players: Record<PlayerId, PlayerState>;
+  players: PlayerState[];
   obstacles: ObstacleState[];
   winner: PlayerId | null;
   endReason: EndReason | null;

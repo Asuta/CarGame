@@ -1,9 +1,7 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
-import { bindHud } from "./ui/hud";
+import { createAppController } from "./ui/app";
 import "./styles.css";
-
-bindHud();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -14,10 +12,11 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 960,
+    width: 1200,
     height: 760,
   },
   scene: [GameScene],
 };
 
 new Phaser.Game(config);
+createAppController();

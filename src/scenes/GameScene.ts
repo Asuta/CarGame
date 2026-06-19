@@ -1,15 +1,28 @@
 import Phaser from "phaser";
 import { RaceSimulation, raceRules } from "../simulation/RaceSimulation";
-import type { PlayerId, RaceState } from "../simulation/raceTypes";
+import type { PlayerId, RaceAction, RaceState } from "../simulation/raceTypes";
 
 const PANEL_WIDTH = 360;
 const PANEL_HEIGHT = 640;
-const PANEL_GAP = 42;
+const PANEL_GAP = 30;
 const ROAD_X = 28;
 const ROAD_WIDTH = PANEL_WIDTH - ROAD_X * 2;
 const METER_PIXELS = 18;
 const PLAYER_ANCHOR_Y = PANEL_HEIGHT - 138;
 const FAR_MARKER_LIMIT_METERS = 26;
+
+type GameMode = "idle" | "local" | "online";
+
+interface PlayerMeta {
+  id: PlayerId;
+  nickname: string;
+}
+
+interface ConfigureGameDetail {
+  mode: "local" | "online";
+  players: PlayerMeta[];
+  controlledPlayerIds: PlayerId[];
+}
 
 interface ViewConfig {
   id: PlayerId;
@@ -19,14 +32,29 @@ interface ViewConfig {
   marker: Phaser.GameObjects.Text;
 }
 
+const carColors: Record<PlayerId, number> = {
+  p1: 0xff344d,
+  p2: 0x2f8cff,
+  p3: 0x3ee07f,
+};
+
+const frameColors: Record<PlayerId, number> = {
+  p1: 0xff3b4f,
+  p2: 0x45a3ff,
+  p3: 0x3ee07f,
+};
+
 export class GameScene extends Phaser.Scene {
   private simulation = new RaceSimulation();
+  private mode: GameMode = "idle";
+  private state: RaceState = this.simulation.getState();
   private views: ViewConfig[] = [];
-  private roadGraphics!: Phaser.GameObjects.Graphics;
   private playerSprites = new Map<PlayerId, Phaser.GameObjects.Image>();
   private obstacleSprites = new Map<number, Phaser.GameObjects.Image>();
+  private controlledPlayerIds = new Set<PlayerId>();
+  private roadGraphics!: Phaser.GameObjects.Graphics;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys!: Record<"a" | "d" | "w", Phaser.Input.Keyboard.Key>;
+  private keys!: Record<"a" | "d" | "w" | "j" | "l" | "i", Phaser.Input.Keyboard.Key>;
 
   constructor() {
     super("game");
@@ -35,27 +63,47 @@ export class GameScene extends Phaser.Scene {
   create() {
     this.createTextures();
     this.roadGraphics = this.add.graphics();
-    this.createCars();
-    this.createViews();
     this.bindInput();
-    this.bindRestart();
+    this.bindEvents();
     this.scale.on("resize", this.layout, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off("resize", this.layout, this);
     });
     this.layout();
-    this.publishHud();
   }
 
   update(_time: number, delta: number) {
+    if (this.mode === "idle") {
+      return;
+    }
+
     this.handleInput();
-    this.simulation.update(Math.min(delta / 1000, 0.05));
-    this.syncSprites();
-    this.drawRoad();
-    this.updateCameras();
-    this.drawViewFrames();
-    this.updateOpponentMarkers();
-    this.publishHud();
+    if (this.mode === "local") {
+      this.simulation.update(Math.min(delta / 1000, 0.05));
+      this.state = this.simulation.getState();
+    }
+
+    this.renderState();
+    this.publishState();
+  }
+
+  private bindEvents() {
+    window.addEventListener("game:configure", (event) => {
+      const detail = (event as CustomEvent<ConfigureGameDetail>).detail;
+      this.mode = detail.mode;
+      this.controlledPlayerIds = new Set(detail.controlledPlayerIds);
+      this.simulation = new RaceSimulation(detail.players.length);
+      this.state = this.simulation.getState();
+      this.createViews(detail.players.map((player) => player.id));
+      this.renderState();
+      this.publishState();
+    });
+
+    window.addEventListener("game:state", (event) => {
+      this.state = (event as CustomEvent<RaceState>).detail;
+      this.renderState();
+      this.publishState();
+    });
   }
 
   private bindInput() {
@@ -68,108 +116,115 @@ export class GameScene extends Phaser.Scene {
       a: Phaser.Input.Keyboard.KeyCodes.A,
       d: Phaser.Input.Keyboard.KeyCodes.D,
       w: Phaser.Input.Keyboard.KeyCodes.W,
-    }) as Record<"a" | "d" | "w", Phaser.Input.Keyboard.Key>;
+      j: Phaser.Input.Keyboard.KeyCodes.J,
+      l: Phaser.Input.Keyboard.KeyCodes.L,
+      i: Phaser.Input.Keyboard.KeyCodes.I,
+    }) as Record<"a" | "d" | "w" | "j" | "l" | "i", Phaser.Input.Keyboard.Key>;
   }
 
   private handleInput() {
-    if (Phaser.Input.Keyboard.JustDown(this.keys.a)) {
-      this.simulation.applyAction({ type: "move-left", playerId: "p1" });
+    this.handlePlayerInput("p1", this.keys.a, this.keys.d, this.keys.w, [255, 64, 64]);
+    if (this.cursors.left && this.cursors.right && this.cursors.up) {
+      this.handlePlayerInput("p2", this.cursors.left, this.cursors.right, this.cursors.up, [64, 160, 255]);
     }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.d)) {
-      this.simulation.applyAction({ type: "move-right", playerId: "p1" });
+    this.handlePlayerInput("p3", this.keys.j, this.keys.l, this.keys.i, [64, 255, 144]);
+  }
+
+  private handlePlayerInput(
+    playerId: PlayerId,
+    leftKey: Phaser.Input.Keyboard.Key,
+    rightKey: Phaser.Input.Keyboard.Key,
+    boostKey: Phaser.Input.Keyboard.Key,
+    flashColor: [number, number, number],
+  ) {
+    if (!this.controlledPlayerIds.has(playerId) || !this.state.players.some((player) => player.id === playerId)) {
+      return;
     }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.w)) {
-      this.simulation.applyAction({ type: "boost", playerId: "p1" });
-      this.flashPlayerView("p1", 255, 64, 64);
+
+    if (Phaser.Input.Keyboard.JustDown(leftKey)) {
+      this.applyAction({ type: "move-left", playerId });
     }
-    if (this.cursors.left && Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
-      this.simulation.applyAction({ type: "move-left", playerId: "p2" });
+    if (Phaser.Input.Keyboard.JustDown(rightKey)) {
+      this.applyAction({ type: "move-right", playerId });
     }
-    if (this.cursors.right && Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
-      this.simulation.applyAction({ type: "move-right", playerId: "p2" });
-    }
-    if (this.cursors.up && Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
-      this.simulation.applyAction({ type: "boost", playerId: "p2" });
-      this.flashPlayerView("p2", 64, 160, 255);
+    if (Phaser.Input.Keyboard.JustDown(boostKey)) {
+      this.applyAction({ type: "boost", playerId });
+      this.flashPlayerView(playerId, ...flashColor);
     }
   }
 
-  private flashPlayerView(playerId: PlayerId, red: number, green: number, blue: number) {
-    const view = this.views.find((candidate) => candidate.id === playerId);
-    view?.camera.flash(80, red, green, blue, false);
+  private applyAction(action: RaceAction) {
+    if (this.mode === "local") {
+      this.simulation.applyAction(action);
+      this.state = this.simulation.getState();
+    }
+    window.dispatchEvent(new CustomEvent("game:action", { detail: action }));
   }
 
-  private bindRestart() {
-    window.addEventListener("race:restart", () => {
-      this.simulation.reset();
-      this.syncSprites();
-      this.publishHud();
-    });
-  }
-
-  private createViews() {
+  private createViews(playerIds: PlayerId[]) {
+    for (const view of this.views) {
+      if (view.camera !== this.cameras.main) {
+        this.cameras.remove(view.camera);
+      }
+      view.frame.destroy();
+      view.marker.destroy();
+    }
+    this.views = [];
     this.cameras.main.setBackgroundColor(0x07070c);
-    const left = this.cameras.main;
-    const right = this.cameras.add(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
 
-    this.views = [
-      {
-        id: "p1",
-        color: 0xff3b4f,
-        camera: left,
+    playerIds.forEach((playerId, index) => {
+      const camera = index === 0 ? this.cameras.main : this.cameras.add(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+      this.views.push({
+        id: playerId,
+        color: frameColors[playerId],
+        camera,
         frame: this.add.graphics().setDepth(50),
         marker: this.add.text(0, 0, "", {
           fontFamily: "monospace",
-          fontSize: "22px",
+          fontSize: "18px",
           color: "#ffe66d",
           stroke: "#08080e",
           strokeThickness: 4,
+          align: "center",
         }).setOrigin(0.5).setDepth(60),
-      },
-      {
-        id: "p2",
-        color: 0x45a3ff,
-        camera: right,
-        frame: this.add.graphics().setDepth(50),
-        marker: this.add.text(0, 0, "", {
-          fontFamily: "monospace",
-          fontSize: "22px",
-          color: "#8dd7ff",
-          stroke: "#08080e",
-          strokeThickness: 4,
-        }).setOrigin(0.5).setDepth(60),
-      },
-    ];
+      });
+    });
 
-    left.ignore([this.views[1].frame, this.views[1].marker]);
-    right.ignore([this.views[0].frame, this.views[0].marker]);
+    for (const view of this.views) {
+      const ignored = this.views
+        .filter((candidate) => candidate.id !== view.id)
+        .flatMap((candidate) => [candidate.frame, candidate.marker]);
+      view.camera.ignore(ignored);
+    }
+    this.layout();
   }
 
   private layout() {
+    if (this.views.length === 0) {
+      return;
+    }
+
     const width = this.scale.width;
     const height = this.scale.height;
-    const scale = Math.min(width / (PANEL_WIDTH * 2 + PANEL_GAP), height / PANEL_HEIGHT, 1.08);
+    const count = this.views.length;
+    const totalPanelWidth = PANEL_WIDTH * count + PANEL_GAP * (count - 1);
+    const scale = Math.min(width / totalPanelWidth, height / PANEL_HEIGHT, 1.08);
     const viewWidth = Math.floor(PANEL_WIDTH * scale);
     const viewHeight = Math.floor(PANEL_HEIGHT * scale);
     const gap = Math.floor(PANEL_GAP * scale);
-    const leftX = Math.floor((width - viewWidth * 2 - gap) / 2);
+    const leftX = Math.floor((width - viewWidth * count - gap * (count - 1)) / 2);
     const topY = Math.floor((height - viewHeight) / 2);
 
-    const viewports = [
-      { x: leftX, y: topY },
-      { x: leftX + viewWidth + gap, y: topY },
-    ];
-
     this.views.forEach((view, index) => {
-      view.camera.setViewport(viewports[index].x, viewports[index].y, viewWidth, viewHeight);
+      view.camera.setViewport(leftX + index * (viewWidth + gap), topY, viewWidth, viewHeight);
       view.camera.setZoom(scale);
-      void index;
     });
   }
 
   private createTextures() {
-    this.makeCarTexture("car-p1", 0xff344d, 0xffffff);
-    this.makeCarTexture("car-p2", 0x2f8cff, 0xffffff);
+    for (const playerId of raceRules.playerIds) {
+      this.makeCarTexture(`car-${playerId}`, carColors[playerId], 0xffffff);
+    }
     this.makeCarTexture("car-traffic", 0xffc857, 0x15151f);
   }
 
@@ -190,25 +245,37 @@ export class GameScene extends Phaser.Scene {
     graphics.destroy();
   }
 
-  private createCars() {
-    this.playerSprites.set("p1", this.add.image(0, 0, "car-p1").setDepth(20));
-    this.playerSprites.set("p2", this.add.image(0, 0, "car-p2").setDepth(21));
+  private renderState() {
+    this.syncSprites();
+    this.drawRoad();
+    this.updateCameras();
+    this.drawViewFrames();
+    this.updateOpponentMarkers();
   }
 
   private syncSprites() {
-    const state = this.simulation.getState();
-    for (const player of Object.values(state.players)) {
-      const sprite = this.playerSprites.get(player.id);
+    const activePlayerIds = new Set<PlayerId>();
+    for (const player of this.state.players) {
+      activePlayerIds.add(player.id);
+      let sprite = this.playerSprites.get(player.id);
       if (!sprite) {
-        continue;
+        sprite = this.add.image(0, 0, `car-${player.id}`).setDepth(20);
+        this.playerSprites.set(player.id, sprite);
       }
       sprite.setPosition(this.laneToX(player.lane), this.distanceToY(player.distanceMeters));
-      sprite.setAlpha(player.crashed ? 0.45 : 1);
-      sprite.setAngle(player.crashed ? (player.id === "p1" ? -12 : 12) : 0);
+      sprite.setAlpha(player.crashed ? 0.35 : 1);
+      sprite.setAngle(player.crashed ? -14 : 0);
+    }
+
+    for (const [playerId, sprite] of this.playerSprites.entries()) {
+      if (!activePlayerIds.has(playerId)) {
+        sprite.destroy();
+        this.playerSprites.delete(playerId);
+      }
     }
 
     const activeObstacleIds = new Set<number>();
-    for (const obstacle of state.obstacles) {
+    for (const obstacle of this.state.obstacles) {
       activeObstacleIds.add(obstacle.id);
       let sprite = this.obstacleSprites.get(obstacle.id);
       if (!sprite) {
@@ -227,9 +294,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawRoad() {
-    const state = this.simulation.getState();
-    const minDistance = Math.min(state.players.p1.distanceMeters, state.players.p2.distanceMeters) - 45;
-    const maxDistance = Math.max(state.players.p1.distanceMeters, state.players.p2.distanceMeters) + 240;
+    if (this.state.players.length === 0) {
+      return;
+    }
+
+    const minDistance = Math.min(...this.state.players.map((player) => player.distanceMeters)) - 45;
+    const maxDistance = Math.max(...this.state.players.map((player) => player.distanceMeters)) + 240;
     const topY = this.distanceToY(maxDistance);
     const bottomY = this.distanceToY(minDistance);
 
@@ -256,33 +326,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCameras() {
-    const state = this.simulation.getState();
     for (const view of this.views) {
-      const player = state.players[view.id];
-      view.camera.setScroll(0, this.distanceToY(player.distanceMeters) - PLAYER_ANCHOR_Y);
+      const player = this.state.players.find((candidate) => candidate.id === view.id);
+      if (player) {
+        view.camera.setScroll(0, this.distanceToY(player.distanceMeters) - PLAYER_ANCHOR_Y);
+      }
     }
   }
 
   private updateOpponentMarkers() {
-    const state = this.simulation.getState();
     for (const view of this.views) {
-      const opponentId: PlayerId = view.id === "p1" ? "p2" : "p1";
-      const player = state.players[view.id];
-      const opponent = state.players[opponentId];
-      const deltaMeters = opponent.distanceMeters - player.distanceMeters;
-      const isFar = Math.abs(deltaMeters) > FAR_MARKER_LIMIT_METERS;
-
-      if (!isFar) {
+      const player = this.state.players.find((candidate) => candidate.id === view.id);
+      if (!player) {
         view.marker.setText("");
         continue;
       }
 
-      const label = opponentId.toUpperCase();
-      view.marker.setText(deltaMeters > 0 ? `▲ ${label} +${deltaMeters.toFixed(0)}m` : `▼ ${label} ${deltaMeters.toFixed(0)}m`);
-      view.marker.setPosition(
-        PANEL_WIDTH / 2,
-        view.camera.scrollY + (deltaMeters > 0 ? 34 : PANEL_HEIGHT - 34) / view.camera.zoom,
-      );
+      const lines = this.state.players
+        .filter((candidate) => candidate.id !== view.id)
+        .map((opponent) => ({
+          id: opponent.id.toUpperCase(),
+          deltaMeters: opponent.distanceMeters - player.distanceMeters,
+        }))
+        .filter((opponent) => Math.abs(opponent.deltaMeters) > FAR_MARKER_LIMIT_METERS)
+        .map((opponent) => opponent.deltaMeters > 0
+          ? `▲ ${opponent.id} +${opponent.deltaMeters.toFixed(0)}m`
+          : `▼ ${opponent.id} ${opponent.deltaMeters.toFixed(0)}m`);
+
+      view.marker.setText(lines.join("\n"));
+      view.marker.setPosition(PANEL_WIDTH / 2, view.camera.scrollY + 34 / view.camera.zoom);
     }
   }
 
@@ -301,13 +373,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private publishHud() {
-    const state = this.simulation.getState();
-    window.dispatchEvent(
-      new CustomEvent<RaceState>("race:update", {
-        detail: state,
-      }),
-    );
+  private flashPlayerView(playerId: PlayerId, red: number, green: number, blue: number) {
+    const view = this.views.find((candidate) => candidate.id === playerId);
+    view?.camera.flash(80, red, green, blue, false);
+  }
+
+  private publishState() {
+    window.dispatchEvent(new CustomEvent("race:update", { detail: this.state }));
   }
 
   private laneToX(lane: number) {
