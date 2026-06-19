@@ -67,7 +67,7 @@ describe("RaceSimulation", () => {
     expect(state.endReason).toBe("obstacle");
   });
 
-  it("ends without a winner when players collide", () => {
+  it("ignores overlap between player cars", () => {
     const simulation = new RaceSimulation();
     const state = simulation.getState();
     state.players.p1.lane = 2;
@@ -77,9 +77,9 @@ describe("RaceSimulation", () => {
 
     simulation.update(0.01);
 
-    expect(state.players.p1.crashed).toBe(true);
-    expect(state.players.p2.crashed).toBe(true);
+    expect(state.players.p1.crashed).toBe(false);
+    expect(state.players.p2.crashed).toBe(false);
     expect(state.winner).toBeNull();
-    expect(state.endReason).toBe("player-collision");
+    expect(state.endReason).toBeNull();
   });
 });

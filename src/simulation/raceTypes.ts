@@ -1,6 +1,6 @@
 export type PlayerId = "p1" | "p2";
 
-export type EndReason = "lead" | "obstacle" | "player-collision";
+export type EndReason = "lead" | "obstacle";
 
 export interface PlayerState {
   id: PlayerId;

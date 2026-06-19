@@ -28,7 +28,7 @@ export function bindHud() {
     }
 
     result.classList.remove("result--hidden");
-    resultKicker.textContent = state.endReason === "player-collision" ? "DOUBLE CRASH" : "RACE OVER";
+    resultKicker.textContent = "RACE OVER";
     if (state.winner) {
       resultTitle.textContent = `${state.winner.toUpperCase()} WINS`;
     } else {
@@ -50,7 +50,7 @@ function createResultCopy(state: RaceState) {
     const crashed = state.players.p1.crashed ? "P1" : "P2";
     return `${crashed} 撞上了前方车辆。`;
   }
-  return "两辆玩家车发生碰撞，本局结束。";
+  return "比赛结束。";
 }
 
 function requireElement(id: string) {

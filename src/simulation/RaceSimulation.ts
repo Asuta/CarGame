@@ -4,7 +4,6 @@ const LANE_COUNT = 5;
 const INITIAL_SPEED = 30;
 const BOOST_INCREMENT = 15;
 const LEAD_TARGET_METERS = 50;
-const PLAYER_COLLISION_METERS = 3.2;
 const OBSTACLE_COLLISION_METERS = 3.6;
 const OBSTACLE_SPAWN_AHEAD_METERS = 230;
 const OBSTACLE_CLEANUP_BEHIND_METERS = 24;
@@ -74,10 +73,6 @@ export class RaceSimulation {
     this.ensureTrafficAhead();
     this.cleanupTraffic();
     this.checkObstacleCollisions();
-    if (this.state.endReason !== null) {
-      return;
-    }
-    this.checkPlayerCollision();
     if (this.state.endReason !== null) {
       return;
     }
@@ -195,21 +190,6 @@ export class RaceSimulation {
         this.state.winner = this.otherPlayer(player.id);
         return;
       }
-    }
-  }
-
-  private checkPlayerCollision() {
-    const p1 = this.state.players.p1;
-    const p2 = this.state.players.p2;
-    if (p1.lane !== p2.lane) {
-      return;
-    }
-
-    if (Math.abs(p1.distanceMeters - p2.distanceMeters) < PLAYER_COLLISION_METERS) {
-      p1.crashed = true;
-      p2.crashed = true;
-      this.state.endReason = "player-collision";
-      this.state.winner = null;
     }
   }
 
