@@ -19,6 +19,7 @@ declare global {
     "game:configure": CustomEvent<ConfigureGameDetail>;
     "game:state": CustomEvent<RaceState>;
     "game:action": CustomEvent<RaceAction>;
+    "game:stop": Event;
   }
 }
 
@@ -35,6 +36,7 @@ export function createAppController() {
   let currentRoom: RoomSnapshot | null = null;
   let currentMode: AppMode | null = null;
   let latestState: RaceState | null = null;
+  let isRacing = false;
 
   els.showLocal.addEventListener("click", () => {
     els.modePicker.classList.add("panel-stack--hidden");
@@ -77,7 +79,7 @@ export function createAppController() {
   });
   els.leaveRoom.addEventListener("click", showLobby);
   els.restart.addEventListener("click", () => {
-    els.result.classList.add("result--hidden");
+    stopActiveRace();
     if (currentMode === "local" && currentRoom) {
       showRoom(currentRoom, "本地房间");
       return;
@@ -96,6 +98,9 @@ export function createAppController() {
   });
 
   window.addEventListener("race:update", (event) => {
+    if (!isRacing) {
+      return;
+    }
     latestState = (event as CustomEvent<RaceState>).detail;
     renderHud(latestState, currentRoom);
     if (latestState.endReason) {
@@ -161,7 +166,9 @@ export function createAppController() {
       case "room-update":
         currentMode = "online";
         currentRoom = message.room;
-        showRoom(message.room, "在线房间");
+        if (!isRacing) {
+          showRoom(message.room, "在线房间");
+        }
         return;
       case "race-start":
         currentMode = "online";
@@ -190,6 +197,7 @@ export function createAppController() {
   }
 
   function startGame(detail: ConfigureGameDetail) {
+    isRacing = true;
     els.lobby.classList.add("menu--hidden");
     els.roomPanel.classList.add("room-panel--hidden");
     els.scoreboard.classList.remove("scoreboard--hidden");
@@ -204,6 +212,7 @@ export function createAppController() {
   }
 
   function showRoom(room: RoomSnapshot, label: string) {
+    stopActiveRace();
     els.lobby.classList.add("menu--hidden");
     els.scoreboard.classList.add("scoreboard--hidden");
     els.roomPanel.classList.remove("room-panel--hidden");
@@ -219,6 +228,7 @@ export function createAppController() {
   }
 
   function showLobby() {
+    stopActiveRace();
     els.lobby.classList.remove("menu--hidden");
     els.roomPanel.classList.add("room-panel--hidden");
     els.scoreboard.classList.add("scoreboard--hidden");
@@ -227,6 +237,9 @@ export function createAppController() {
   }
 
   function showResult(state: RaceState, room: RoomSnapshot | null) {
+    if (!isRacing) {
+      return;
+    }
     els.result.classList.remove("result--hidden");
     els.resultKicker.textContent = state.endReason === "disconnect" ? "DISCONNECTED" : "RACE OVER";
     const winnerName = state.winner ? nicknameFor(room, state.winner) : "无人获胜";
@@ -294,6 +307,15 @@ export function createAppController() {
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(message));
     }
+  }
+
+  function stopActiveRace() {
+    if (isRacing) {
+      window.dispatchEvent(new Event("game:stop"));
+    }
+    isRacing = false;
+    latestState = null;
+    els.result.classList.add("result--hidden");
   }
 }
 

@@ -104,6 +104,11 @@ export class GameScene extends Phaser.Scene {
       this.renderState();
       this.publishState();
     });
+
+    window.addEventListener("game:stop", () => {
+      this.mode = "idle";
+      this.controlledPlayerIds.clear();
+    });
   }
 
   private bindInput() {
