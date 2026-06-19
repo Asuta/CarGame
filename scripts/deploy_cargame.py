@@ -124,11 +124,42 @@ systemctl restart cargame.service
 """,
             timeout=420,
         )
-        nginx_conf = f"""
+        http_nginx_conf = f"""
 server {{
     listen 80;
     listen [::]:80;
     server_name {DOMAIN};
+
+    location / {{
+        proxy_pass http://127.0.0.1:8790;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600;
+    }}
+}}
+"""
+        https_nginx_conf = f"""
+server {{
+    listen 80;
+    listen [::]:80;
+    server_name {DOMAIN};
+    return 301 https://$host$request_uri;
+}}
+
+server {{
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/{DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{DOMAIN}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     location / {{
         proxy_pass http://127.0.0.1:8790;
@@ -148,7 +179,7 @@ server {{
             f"""
 set -euo pipefail
 cat > /etc/nginx/sites-available/cargame <<'NGINX'
-{nginx_conf}
+{http_nginx_conf}
 NGINX
 ln -sfn /etc/nginx/sites-available/cargame /etc/nginx/sites-enabled/cargame
 nginx -t
@@ -156,6 +187,9 @@ systemctl reload nginx
 if [ ! -f /etc/letsencrypt/live/{DOMAIN}/fullchain.pem ]; then
   certbot --nginx -d {DOMAIN} --non-interactive --agree-tos --register-unsafely-without-email
 fi
+cat > /etc/nginx/sites-available/cargame <<'NGINX'
+{https_nginx_conf}
+NGINX
 nginx -t
 systemctl reload nginx
 systemctl is-active cargame
