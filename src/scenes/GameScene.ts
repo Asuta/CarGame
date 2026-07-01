@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { advancePredictedState, applyPredictedAction, mergePredictedState } from "../simulation/clientPrediction";
 import { RaceSimulation, raceRules } from "../simulation/RaceSimulation";
 import type { PlayerId, RaceAction, RaceState } from "../simulation/raceTypes";
 
@@ -81,6 +82,8 @@ export class GameScene extends Phaser.Scene {
     if (this.mode === "local") {
       this.simulation.update(Math.min(delta / 1000, 0.05));
       this.state = this.simulation.getState();
+    } else {
+      this.state = advancePredictedState(this.state, Math.min(delta / 1000, 0.05));
     }
 
     this.renderState();
@@ -100,7 +103,10 @@ export class GameScene extends Phaser.Scene {
     });
 
     window.addEventListener("game:state", (event) => {
-      this.state = (event as CustomEvent<RaceState>).detail;
+      const serverState = (event as CustomEvent<RaceState>).detail;
+      this.state = this.mode === "online"
+        ? mergePredictedState(this.state, serverState, this.controlledPlayerIds)
+        : serverState;
       this.renderState();
       this.publishState();
     });
@@ -162,6 +168,8 @@ export class GameScene extends Phaser.Scene {
     if (this.mode === "local") {
       this.simulation.applyAction(action);
       this.state = this.simulation.getState();
+    } else if (this.mode === "online") {
+      this.state = applyPredictedAction(this.state, action);
     }
     window.dispatchEvent(new CustomEvent("game:action", { detail: action }));
   }
