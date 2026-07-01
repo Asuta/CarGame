@@ -198,11 +198,13 @@ export function createAppController() {
 
   function startGame(detail: ConfigureGameDetail) {
     isRacing = true;
+    focusGameInput();
     els.lobby.classList.add("menu--hidden");
     els.roomPanel.classList.add("room-panel--hidden");
     els.scoreboard.classList.remove("scoreboard--hidden");
     els.result.classList.add("result--hidden");
     window.dispatchEvent(new CustomEvent("game:configure", { detail }));
+    focusGameInput();
   }
 
   function applyOnlineState(state: RaceState) {
@@ -353,6 +355,7 @@ function getElements() {
     resultTitle: requireElement("result-title"),
     resultCopy: requireElement("result-copy"),
     restart: requireElement("restart") as HTMLButtonElement,
+    game: requireElement("game"),
   };
 }
 
@@ -380,4 +383,14 @@ function escapeHtml(value: string) {
     };
     return entities[char];
   });
+}
+
+function focusGameInput() {
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+  const game = document.getElementById("game");
+  if (game instanceof HTMLElement) {
+    game.focus({ preventScroll: true });
+  }
 }

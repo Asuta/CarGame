@@ -85,4 +85,19 @@ describe("RoomManager", () => {
     const state = latest(host.socket, "race-state")?.state ?? latest(host.socket, "race-start")?.state;
     expect(state?.players.find((player) => player.id === "p2")?.boostCount).toBe(0);
   });
+
+  it("accepts input from the joined player's own car", () => {
+    const manager = new RoomManager();
+    const host = connect(manager, "Host");
+    const guest = connect(manager, "Guest");
+    manager.handleMessage(host.clientId, { type: "create-room" });
+    const code = latest(host.socket, "room-update")?.room.code ?? "";
+    manager.handleMessage(guest.clientId, { type: "join-room", code });
+    manager.handleMessage(host.clientId, { type: "start-race" });
+
+    manager.handleMessage(guest.clientId, { type: "input", action: { type: "boost", playerId: "p2" } });
+
+    const state = latest(guest.socket, "race-state")?.state;
+    expect(state?.players.find((player) => player.id === "p2")?.boostCount).toBe(1);
+  });
 });
